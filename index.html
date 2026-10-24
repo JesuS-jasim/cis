@@ -38,15 +38,8 @@ body{font-family:'Cairo','Segoe UI',Tahoma,sans-serif;background:var(--bg);color
 <div id="login-screen" class="login-wrap" style="display:none">
   <div class="card card-login p-4">
     <h4 id="login-title" class="text-center fw-bold mb-1" style="color:var(--teal)">تسجيل الدخول</h4>
-    <p id="login-note" class="text-center text-muted small mb-4">نظام حضور المعهد</p>
+    <p id="login-note" class="text-center text-muted small mb-4">تسجيل الدخول إلى حساب المعهد</p>
     <div id="login-error" class="alert alert-danger p-2 small text-center" style="display:none"></div>
-    <form id="setup-form" style="display:none">
-      <div class="mb-3"><label class="form-label">اسم المسؤول</label><input type="text" id="setup-name" class="form-control" required></div>
-      <div class="mb-3"><label class="form-label">البريد الإلكتروني</label><input type="email" id="setup-email" class="form-control" required></div>
-      <div class="mb-3"><label class="form-label">كلمة المرور (10 أحرف على الأقل)</label><input type="password" id="setup-password" class="form-control" minlength="10" required></div>
-      <div class="mb-3"><label class="form-label">تأكيد كلمة المرور</label><input type="password" id="setup-confirm" class="form-control" minlength="10" required></div>
-      <button class="btn btn-teal w-100 py-2 fw-bold">إنشاء حساب المسؤول</button>
-    </form>
     <form id="login-form">
       <div class="mb-3"><label class="form-label">البريد الإلكتروني</label><input type="email" id="login-email" class="form-control" required></div>
       <div class="mb-3"><label class="form-label">كلمة المرور</label><input type="password" id="login-password" class="form-control" required></div>
@@ -172,28 +165,66 @@ body{font-family:'Cairo','Segoe UI',Tahoma,sans-serif;background:var(--bg);color
 </div></div></div>
 <div id="toast" class="alert alert-success py-2 px-3 shadow">✓ تم الحفظ</div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="supabase-config.js"></script>
 <script>
 const DB_KEY='institute_db_v1', SK='institute_session';
 const ST=['حاضر','متأخر','مجاز','غائب'];
 let db, me, mode='s', saveCb=null;
+let supabaseClient=null, saveQueue=Promise.resolve();
 const $=i=>document.getElementById(i);
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const today=()=>{const d=new Date();return new Date(d-d.getTimezoneOffset()*6e4).toISOString().slice(0,10)};
 const nid=a=>a.length?Math.max(...a.map(x=>x.id))+1:1;
-function hash(str){let a=0xdeadbeef,b=0x41c6ce57;for(let i=0;i<str.length;i++){const c=str.charCodeAt(i);a=Math.imul(a^c,2654435761);b=Math.imul(b^c,1597334677)}
-  a=Math.imul(a^(a>>>16),2246822507)^Math.imul(b^(b>>>13),3266489909);b=Math.imul(b^(b>>>16),2246822507)^Math.imul(a^(a>>>13),3266489909);
-  return (b>>>0).toString(16).padStart(8,'0')+(a>>>0).toString(16).padStart(8,'0')}
 
 /* ---------- قاعدة البيانات ---------- */
 function seed(){return{users:[],
   teachers:[],courses:[],students:[],att:{}}}
-function load(){try{db=JSON.parse(localStorage.getItem(DB_KEY))||seed()}catch(e){db=seed()}
-  ['users','teachers','courses','students'].forEach(k=>db[k]=db[k]||[]);db.att=db.att||{};
-  db.users=db.users.filter(u=>!(u.id===1&&u.full_name==='مدير النظام'&&u.role==='admin'));save()}
 const mem={};
 const ss={get:()=>{try{return sessionStorage.getItem(SK)}catch(e){return mem.s}},set:v=>{mem.s=v;try{sessionStorage.setItem(SK,v)}catch(e){}},del:()=>{mem.s=null;try{sessionStorage.removeItem(SK)}catch(e){}}};
-let warned=false;
-function save(){try{localStorage.setItem(DB_KEY,JSON.stringify(db))}catch(e){if(!warned){warned=true;setTimeout(()=>alert('تنبيه: المتصفح يمنع حفظ البيانات في هذه البيئة، وستضيع عند إغلاق الصفحة. افتح الملف مباشرة من جهازك في Chrome أو Edge.'),300)}}}
+function showCloudError(message){const error=$('login-error');error.textContent=message;error.style.display='block'}
+async function callCloudFunction(name,body){
+  const{data,error}=await supabaseClient.functions.invoke(name,{body});
+  if(error){let message=error.message;try{const result=await error.context.json();if(result.error)message=result.error}catch(e){}throw new Error(message)}
+  if(data&&data.error)throw new Error(data.error);
+  return data
+}
+async function loadCloudState(authUserId,offerMigration=true){
+  const result=await callCloudFunction('app-data',{action:'get'});
+  db={...seed(),...result,users:result.users||[]};
+  me=db.users.find(user=>user.auth_user_id===authUserId&&user.is_active);
+  if(!me)throw new Error('الحساب غير مفعّل في نظام المعهد. تواصل مع المسؤول.');
+  ss.set(me.id);
+  const cloudHasData=db.teachers.length||db.courses.length||db.students.length||Object.keys(db.att).length;
+  if(offerMigration&&me.role==='admin'&&!cloudHasData){try{const local=JSON.parse(localStorage.getItem(DB_KEY)||'null');
+    const localHasData=local&&(local.teachers?.length||local.courses?.length||local.students?.length||Object.keys(local.att||{}).length);
+    if(localHasData&&confirm('عُثر على بيانات قديمة في هذا المتصفح. هل تريد نقل الدورات والطلاب والحضور إلى قاعدة Supabase؟')){
+      db.teachers=local.teachers||[];db.courses=local.courses||[];db.students=local.students||[];db.att=local.att||{};await save()
+    }}catch(error){console.warn('Could not inspect old local data.',error)}}
+  init()
+}
+async function connectCloud(){
+  const config=window.APP_SUPABASE_CONFIG||{};
+  if(!window.supabase||!config.url||config.url.includes('YOUR_PROJECT_REF')||!config.anonKey||config.anonKey.includes('YOUR_SUPABASE_')){
+    db=seed();ss.del();init();showCloudError('إعداد Supabase غير مكتمل. أضف رابط المشروع والمفتاح العام في supabase-config.js.');return
+  }
+  supabaseClient=window.supabase.createClient(config.url,config.anonKey);
+  const{data,error}=await supabaseClient.auth.getSession();
+  if(error)throw error;
+  if(data.session)await loadCloudState(data.session.user.id);
+  else{db=seed();ss.del();init()}
+}
+function save(){
+  if(!supabaseClient||!me)return Promise.resolve(false);
+  const data=JSON.parse(JSON.stringify({teachers:db.teachers,courses:db.courses,students:db.students,att:db.att}));
+  saveQueue=saveQueue.catch(()=>{}).then(()=>callCloudFunction('app-data',{action:'save',data,revision:db.revision}));
+  return saveQueue.then(result=>{db.revision=result.revision;return true}).catch(async error=>{
+    console.error(error);toast(error.message||'تعذر الحفظ في قاعدة البيانات');
+    try{const{data:{session}}=await supabaseClient.auth.getSession();if(session)await loadCloudState(session.user.id,false)}catch(reloadError){console.error(reloadError)}
+    return false
+  })
+}
+async function manageCloudUser(body){return callCloudFunction('manage-users',body)}
 function toast(t){const e=$('toast');e.textContent=t||'✓ تم الحفظ';e.style.opacity=1;clearTimeout(e._t);e._t=setTimeout(()=>e.style.opacity=0,1500)}
 
 /* ---------- مساعدات البيانات ---------- */
@@ -222,9 +253,9 @@ function form(title,fields,cb){
     else if(f.t==='checks')h=(f.o.length?f.o.map(([v,l])=>`<div class="form-check"><input type="checkbox" class="form-check-input ck-${f.k}" value="${v}" id="${id}${v}" ${(f.v||[]).includes(+v)?'checked':''}><label class="form-check-label" for="${id}${v}">${esc(l)}</label></div>`).join(''):'<div class="text-muted small">لا توجد دورات بعد</div>');
     else h=`<input type="${f.t||'text'}" id="${id}" class="form-control" value="${esc(f.v)}" ${f.r?'required':''}>`;
     return `<div class="mb-3"><label class="form-label">${f.l}</label>${h}</div>`}).join('');
-  saveCb=()=>{const v={};for(const f of fields){v[f.k]=f.t==='checks'?[...document.querySelectorAll('.ck-'+f.k+':checked')].map(x=>+x.value):$('f_'+f.k).value.trim();
+  saveCb=async()=>{try{const v={};for(const f of fields){v[f.k]=f.t==='checks'?[...document.querySelectorAll('.ck-'+f.k+':checked')].map(x=>+x.value):$('f_'+f.k).value.trim();
       if(f.r&&!v[f.k]){alert('يرجى تعبئة: '+f.l);return}}
-    if(cb(v)!==false){save();closeM();render();toast()}};
+    if(await cb(v)!==false&&await save()){closeM();render();toast('✓ تمت المزامنة')}}catch(error){alert(error.message||'تعذر تنفيذ العملية')}};
   $('m').classList.add('open');
 }
 const closeM=()=>$('m').classList.remove('open');
@@ -280,10 +311,10 @@ function rAtt(){
   $('a-save').style.display='';
   $('all-p').style.display=$('all-a').style.display=$('a-search').style.display=mode==='s'?'':'none';
 }
-function saveAtt(){const cid=+$('a-course').value,date=$('a-date').value;if(!date)return alert('اختر التاريخ');
+async function saveAtt(){const cid=+$('a-course').value,date=$('a-date').value;if(!date)return alert('اختر التاريخ');
   document.querySelectorAll('.arow').forEach(r=>{const o={status:r.querySelector('.st').value,notes:r.querySelector('.nt').value.trim()};
     const tm=r.querySelector('.tm');if(tm)o.time=tm.value;db.att[key(mode,r.dataset.pid,cid,date)]=o});
-  save();toast('✓ تم حفظ الحضور');rAtt()}
+  if(await save()){toast('✓ تم حفظ الحضور');rAtt()}}
 const setAll=v=>document.querySelectorAll('.arow .st').forEach(s=>{s.value=v;s.className='form-select form-select-sm st st-'+v});
 
 /* ---------- التقارير ---------- */
@@ -322,9 +353,9 @@ function editCourse(id){const c=id?course(id):{};form(id?'تعديل الدور�
   {k:'status',l:'الحالة',t:'select',o:[['جارية','جارية'],['منتهية','منتهية']],v:c.status||'جارية'}],v=>{
   const o={...v,teacher_id:v.teacher_id?+v.teacher_id:null};
   if(id)Object.assign(c,o);else db.courses.push({id:nid(db.courses),...o})})}
-function delCourse(id){if(!confirm('حذف الدورة وكل سجلات حضورها؟'))return;
+async function delCourse(id){if(!confirm('حذف الدورة وكل سجلات حضورها؟'))return;
   db.courses=db.courses.filter(c=>c.id!=id);db.students.forEach(s=>s.course_ids=s.course_ids.filter(i=>i!=id));
-  Object.keys(db.att).forEach(k=>{if(k.split('|')[2]==id)delete db.att[k]});save();render()}
+  Object.keys(db.att).forEach(k=>{if(k.split('|')[2]==id)delete db.att[k]});if(await save())render()}
 
 /* ---------- الأساتذة ---------- */
 function rTeachers(){$('teachers-body').innerHTML=db.teachers.map(t=>{const u=db.users.find(u=>u.teacher_id==t.id);
@@ -333,15 +364,19 @@ function rTeachers(){$('teachers-body').innerHTML=db.teachers.map(t=>{const u=db
   <td class="text-nowrap"><button class="btn btn-sm btn-outline-primary" onclick="editTeacher(${t.id})">تعديل</button> <button class="btn btn-sm btn-outline-danger" onclick="delTeacher(${t.id})">حذف</button></td></tr>`}).join('')||'<tr><td colspan="6" class="text-center text-muted">لا يوجد أساتذة</td></tr>'}
 function editTeacher(id){const t=id?db.teachers.find(x=>x.id==id):{},u=id&&db.users.find(u=>u.teacher_id==id);
   form(id?'تعديل الأستاذ':'أستاذ جديد',[{k:'name',l:'الاسم الكامل',v:t.name,r:1},{k:'phone',l:'الهاتف',v:t.phone},{k:'spec',l:'التخصص',v:t.spec},
-    {k:'email',l:'البريد (لحساب الدخول - اختياري)',t:'email',v:u?u.email:''},{k:'pass',l:u?'كلمة مرور جديدة (اتركها فارغة للإبقاء)':'كلمة المرور',t:'password'}],v=>{
+    {k:'email',l:'البريد (لحساب الدخول - اختياري)',t:'email',v:u?u.email:''},{k:'pass',l:u?'كلمة مرور جديدة (10 أحرف على الأقل، أو اتركها فارغة)':'كلمة المرور (10 أحرف على الأقل)',t:'password'}],async v=>{
     if(v.email&&db.users.some(x=>x.email===v.email&&x!==u)){alert('البريد مستخدم مسبقاً');return false}
     if(v.email&&!u&&!v.pass){alert('أدخل كلمة مرور للحساب');return false}
     let tid=id;if(id)Object.assign(t,{name:v.name,phone:v.phone,spec:v.spec});else{tid=nid(db.teachers);db.teachers.push({id:tid,name:v.name,phone:v.phone,spec:v.spec})}
-    if(v.email){if(u){u.email=v.email;u.full_name=v.name;if(v.pass)u.password=hash(v.pass)}
-      else db.users.push({id:nid(db.users),full_name:v.name,email:v.email,password:hash(v.pass),role:'teacher',teacher_id:tid,is_active:true})}})}
-function delTeacher(id){if(!confirm('حذف الأستاذ؟ ستبقى دوراته بدون أستاذ.'))return;
-  db.teachers=db.teachers.filter(t=>t.id!=id);db.courses.forEach(c=>{if(c.teacher_id==id)c.teacher_id=null});
-  db.users=db.users.filter(u=>u.teacher_id!=id);Object.keys(db.att).forEach(k=>{const p=k.split('|');if(p[0]==='t'&&p[1]==id)delete db.att[k]});save();render()}
+    if(v.email){if(u){const body={action:'update',id:u.id,full_name:v.name,email:v.email,role:'teacher',teacher_id:tid};if(v.pass)body.password=v.pass;
+        const result=await manageCloudUser(body);Object.assign(u,result.user)}
+      else{const result=await manageCloudUser({action:'create',full_name:v.name,email:v.email,password:v.pass,role:'teacher',teacher_id:tid});db.users.push(result.user)}}})}
+async function delTeacher(id){if(!confirm('حذف الأستاذ؟ ستبقى دوراته بدون أستاذ.'))return;
+  try{const account=db.users.find(u=>u.teacher_id==id);
+    db.teachers=db.teachers.filter(t=>t.id!=id);db.courses.forEach(c=>{if(c.teacher_id==id)c.teacher_id=null});
+    Object.keys(db.att).forEach(k=>{const p=k.split('|');if(p[0]==='t'&&p[1]==id)delete db.att[k]});
+    if(await save()){if(account)await manageCloudUser({action:'delete',id:account.id});db.users=db.users.filter(u=>u.teacher_id!=id);render()}
+  }catch(error){alert(error.message||'تعذر حذف الأستاذ')}}
 
 /* ---------- الطلاب ---------- */
 function rStudents(){const f=$('st-filter'),cur=f.value;f.innerHTML='<option value="">كل الدورات</option>'+courseOpts(db.courses,cur).replace('<option value="">لا توجد دورات</option>','');f.value=cur;
@@ -353,49 +388,39 @@ function editStudent(id){const s=id?db.students.find(x=>x.id==id):{};
   form(id?'تعديل الطالب':'طالب جديد',[{k:'name',l:'الاسم الكامل',v:s.name,r:1},{k:'phone',l:'الهاتف',v:s.phone},
     {k:'course_ids',l:'الدورات المسجّل بها',t:'checks',o:db.courses.map(c=>[c.id,c.name]),v:s.course_ids||[]}],v=>{
     if(id)Object.assign(s,v);else db.students.push({id:nid(db.students),...v})})}
-function delStudent(id){if(!confirm('حذف الطالب وسجلاته؟'))return;db.students=db.students.filter(s=>s.id!=id);
-  Object.keys(db.att).forEach(k=>{const p=k.split('|');if(p[0]==='s'&&p[1]==id)delete db.att[k]});save();render()}
-function importCSV(file){const rd=new FileReader();rd.onload=e=>{let n=0;
+async function delStudent(id){if(!confirm('حذف الطالب وسجلاته؟'))return;db.students=db.students.filter(s=>s.id!=id);
+  Object.keys(db.att).forEach(k=>{const p=k.split('|');if(p[0]==='s'&&p[1]==id)delete db.att[k]});if(await save())render()}
+function importCSV(file){const rd=new FileReader();rd.onload=async e=>{let n=0;
   e.target.result.replace(/^\uFEFF/,'').split(/\r?\n/).forEach((ln,i)=>{const p=ln.split(',').map(x=>x.trim());if(!p[0]||(i==0&&/الاسم|name/i.test(p[0])))return;
     const ids=(p[2]||'').split(/[;؛]/).map(x=>x.trim()).map(nm=>db.courses.find(c=>c.name===nm)).filter(Boolean).map(c=>c.id);
     db.students.push({id:nid(db.students),name:p[0],phone:p[1]||'',course_ids:ids});n++});
-  save();render();toast(`✓ تم استيراد ${n} طالب`)};rd.readAsText(file,'utf-8')}
+  if(await save()){render();toast(`✓ تم استيراد ${n} طالب`)}};rd.readAsText(file,'utf-8')}
 
 /* ---------- المستخدمون ---------- */
 function rUsers(){$('users-body').innerHTML=db.users.map(u=>`<tr><td>${esc(u.full_name)}</td><td>${esc(u.email)}</td><td>${u.role==='admin'?'مسؤول':'أستاذ'}</td>
   <td><span class="badge bg-${u.is_active?'success':'secondary'}">${u.is_active?'مفعّل':'معطّل'}</span></td>
   <td class="text-nowrap">${u.id===me.id?'<span class="text-muted small">حسابك</span>':`<button class="btn btn-sm btn-outline-warning" onclick="togUser(${u.id})">${u.is_active?'تعطيل':'تفعيل'}</button> <button class="btn btn-sm btn-outline-danger" onclick="delUser(${u.id})">حذف</button>`}</td></tr>`).join('')}
-function togUser(id){const u=db.users.find(x=>x.id==id);u.is_active=!u.is_active;save();rUsers()}
-function delUser(id){if(confirm('حذف المستخدم؟')){db.users=db.users.filter(u=>u.id!=id);save();rUsers()}}
+async function togUser(id){try{const u=db.users.find(x=>x.id==id);const result=await manageCloudUser({action:'toggle',id,is_active:!u.is_active});Object.assign(u,result.user);rUsers()}
+  catch(error){alert(error.message||'تعذر تغيير حالة الحساب')}}
+async function delUser(id){if(confirm('حذف المستخدم؟')){try{await manageCloudUser({action:'delete',id});db.users=db.users.filter(u=>u.id!=id);rUsers()}
+  catch(error){alert(error.message||'تعذر حذف المستخدم')}}}
 
 /* ---------- الدخول ---------- */
-let fails=0,lock=0;
-function setupAdmin(e){e.preventDefault();const er=$('login-error');
-  if(db.users.length)return init();
-  const password=$('setup-password').value;
-  if(password.length<10){er.textContent='كلمة المرور يجب أن تكون 10 أحرف على الأقل.';er.style.display='block';return}
-  if(password!==$('setup-confirm').value){er.textContent='كلمتا المرور غير متطابقتين.';er.style.display='block';return}
-  const u={id:nid(db.users),full_name:$('setup-name').value.trim(),email:$('setup-email').value.trim(),password:hash(password),role:'admin',is_active:true};
-  db.users.push(u);save();ss.set(u.id);init()}
-function login(e){e.preventDefault();const er=$('login-error'),b=$('login-submit');
-  if(Date.now()<lock){er.textContent='الدخول مقفل مؤقتاً، حاول بعد قليل.';er.style.display='block';return}
-  const u=db.users.find(u=>u.email===$('login-email').value.trim()&&u.is_active);
-  if(u&&u.password===hash($('login-password').value)){fails=0;ss.set(u.id);init()}
-  else{fails++;er.textContent=fails>=5?'تم قفل الدخول لمدة دقيقة.':`البريد أو كلمة المرور غير صحيحة (متبقي ${5-fails})`;er.style.display='block';
-    if(fails>=5){fails=0;lock=Date.now()+6e4;b.disabled=true;setTimeout(()=>b.disabled=false,6e4)}}}
+async function login(e){e.preventDefault();
+  if(!supabaseClient){showCloudError('إعداد Supabase غير مكتمل.');return}
+  const{data,error}=await supabaseClient.auth.signInWithPassword({email:$('login-email').value.trim(),password:$('login-password').value});
+  if(error){showCloudError('تعذر تسجيل الدخول. تحقق من البريد وكلمة المرور.');return}
+  try{await loadCloudState(data.user.id)}catch(err){await supabaseClient.auth.signOut();showCloudError(err.message||'تعذر تحميل بيانات المعهد')}}
 function init(){me=db.users.find(u=>u.id==ss.get()&&u.is_active);
-  const firstRun=!db.users.length;
   $('login-screen').style.display=me?'none':'flex';$('app').style.display=me?'block':'none';
-  $('setup-form').style.display=!me&&firstRun?'':'none';$('login-form').style.display=!me&&firstRun?'none':'';
-  $('login-title').textContent=firstRun?'إعداد المسؤول الأول':'تسجيل الدخول';
-  $('login-note').textContent=firstRun?'البيانات محفوظة في هذا المتصفح فقط؛ لا تستخدم معلومات حساسة.':'نظام حضور المعهد';
   if(!me)return;
   $('side-name').textContent=me.full_name;$('side-role').textContent=admin()?'مسؤول':'أستاذ';
   document.querySelectorAll('.adm').forEach(e=>e.style.display=admin()?'':'none');go('dashboard')}
 
 /* ---------- ربط الأحداث ---------- */
-document.addEventListener('DOMContentLoaded',()=>{$('login-form').onsubmit=login;$('setup-form').onsubmit=setupAdmin;load();init();
-  $('logout').onclick=()=>{ss.del();location.reload()};
+document.addEventListener('DOMContentLoaded',async()=>{$('login-form').onsubmit=login;
+  try{await connectCloud()}catch(error){db=seed();ss.del();init();showCloudError(error.message||'تعذر الاتصال بقاعدة البيانات')}
+  $('logout').onclick=async()=>{ss.del();if(supabaseClient)await supabaseClient.auth.signOut();location.reload()};
   document.querySelectorAll('#nav [data-tab]').forEach(a=>a.onclick=()=>go(a.dataset.tab));
   $('m-save').onclick=()=>saveCb&&saveCb();
   $('a-course').onchange=$('a-date').onchange=rAtt;
@@ -407,14 +432,14 @@ document.addEventListener('DOMContentLoaded',()=>{$('login-form').onsubmit=login
   $('add-course').onclick=()=>editCourse(0);$('add-teacher').onclick=()=>editTeacher(0);$('add-student').onclick=()=>editStudent(0);
   $('st-filter').onchange=$('st-search').oninput=rStudents;
   $('imp-csv').onclick=()=>$('csv-file').click();$('csv-file').onchange=e=>{if(e.target.files[0])importCSV(e.target.files[0]);e.target.value=''};
-  $('add-user').onclick=()=>form('مسؤول جديد',[{k:'name',l:'الاسم',r:1},{k:'email',l:'البريد',t:'email',r:1},{k:'pass',l:'كلمة المرور',t:'password',r:1}],v=>{
+  $('add-user').onclick=()=>form('مسؤول جديد',[{k:'name',l:'الاسم',r:1},{k:'email',l:'البريد',t:'email',r:1},{k:'pass',l:'كلمة المرور (10 أحرف على الأقل)',t:'password',r:1}],async v=>{
     if(db.users.some(u=>u.email===v.email)){alert('البريد مسجل مسبقاً');return false}
-    db.users.push({id:nid(db.users),full_name:v.name,email:v.email,password:hash(v.pass),role:'admin',is_active:true})});
+    const result=await manageCloudUser({action:'create',full_name:v.name,email:v.email,password:v.pass,role:'admin'});db.users.push(result.user)});
   $('backup').onclick=()=>download(JSON.stringify(db),`نسخة_المعهد_${today()}.json`,'application/json');
   $('restore').onclick=()=>$('restore-file').click();
-  $('restore-file').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=x=>{try{const d=JSON.parse(x.target.result.replace(/^\uFEFF/,''));
-    if(!d.users||!d.courses)throw 0;if(confirm('استبدال كل البيانات الحالية؟')){db=d;save();location.reload()}}catch(_){alert('ملف غير صالح')}};r.readAsText(f);e.target.value=''};
-  $('reset').onclick=()=>{if(confirm('سيتم حذف كل البيانات نهائياً. متأكد؟')){try{localStorage.removeItem(DB_KEY)}catch(e){};location.reload()}};
+  $('restore-file').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=async x=>{try{const d=JSON.parse(x.target.result.replace(/^\uFEFF/,''));
+    if(!d.courses||!d.students||!d.teachers||!d.att)throw 0;if(confirm('استبدال كل البيانات الحالية؟')){db={...seed(),...d,users:db.users};if(await save())location.reload()}}catch(_){alert('ملف غير صالح أو تعذر حفظه')}};r.readAsText(f);e.target.value=''};
+  $('reset').onclick=async()=>{if(confirm('سيتم حذف كل البيانات نهائياً. متأكد؟')){db={...seed(),users:db.users};if(await save()){render();toast('تم حذف بيانات المعهد')}}};
 });
 </script>
 </body>
