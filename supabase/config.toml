@@ -1,0 +1,7 @@
+project_id = "institute-attendance"
+
+[functions.app-data]
+verify_jwt = true
+
+[functions.manage-users]
+verify_jwt = true
