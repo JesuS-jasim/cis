@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>نظام حضور المعهد - الدورات والأساتذة والطلاب</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.rtl.min.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap">
+<style>
+:root{--ink:#14213d;--teal:#0f766e;--bg:#f3f5f4}
+body{font-family:'Cairo','Segoe UI',Tahoma,sans-serif;background:var(--bg);color:#1f2937}
+.login-wrap{background:var(--ink);min-height:100vh;display:flex;align-items:center;justify-content:center}
+.card-login{border:0;border-radius:14px;width:100%;max-width:400px}
+.sidebar{min-height:100vh;background:var(--ink);color:#fff}
+.sidebar .nav-link{color:#a9b4cc;margin-bottom:4px;border-radius:8px;cursor:pointer}
+.sidebar .nav-link:hover,.sidebar .nav-link.active{background:var(--teal);color:#fff}
+.box{background:#fff;border:1px solid #e3e8e6;border-radius:10px;padding:16px}
+.stat{border-radius:10px;color:#fff;padding:16px;height:100%}
+.stat b{display:block;font-size:2rem}
+.bar{background:#e5e7eb;border-radius:6px;height:14px;overflow:hidden}
+.bar>i{display:block;height:100%}
+.btn-teal{background:var(--teal);color:#fff;border:0}.btn-teal:hover{background:#0b5e57;color:#fff}
+.seg .btn{border-radius:0}.seg .btn.on{background:var(--teal);color:#fff}
+#toast{position:fixed;bottom:16px;left:16px;z-index:2000;opacity:0;transition:opacity .3s;pointer-events:none}
+.st-حاضر{border-color:#16a34a}.st-متأخر{border-color:#f59e0b}.st-مجاز{border-color:#0ea5e9}.st-غائب{border-color:#dc2626}
+@media print{.sidebar,.no-print{display:none!important}}
+.d-none{display:none!important}
+#m{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1500;align-items:center;justify-content:center;padding:12px;overflow:auto}
+#m.open{display:flex}
+.mbox{background:#fff;border-radius:12px;width:100%;max-width:500px;max-height:92vh;overflow:auto}
+.mbox .modal-header,.mbox .modal-body,.mbox .modal-footer{padding:14px 18px;display:block}
+.mbox .modal-header{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #e5e7eb}
+.mbox .btn-close{background:none;border:0;font-size:1.3rem;cursor:pointer}.mbox .btn-close:before{content:"✕"}
+</style>
+</head>
+<body>
+
+<div id="login-screen" class="login-wrap" style="display:none">
+  <div class="card card-login p-4">
+    <h4 id="login-title" class="text-center fw-bold mb-1" style="color:var(--teal)">تسجيل الدخول</h4>
+    <p id="login-note" class="text-center text-muted small mb-4">نظام حضور المعهد</p>
+    <div id="login-error" class="alert alert-danger p-2 small text-center" style="display:none"></div>
+    <form id="setup-form" style="display:none">
+      <div class="mb-3"><label class="form-label">اسم المسؤول</label><input type="text" id="setup-name" class="form-control" required></div>
+      <div class="mb-3"><label class="form-label">البريد الإلكتروني</label><input type="email" id="setup-email" class="form-control" required></div>
+      <div class="mb-3"><label class="form-label">كلمة المرور (10 أحرف على الأقل)</label><input type="password" id="setup-password" class="form-control" minlength="10" required></div>
+      <div class="mb-3"><label class="form-label">تأكيد كلمة المرور</label><input type="password" id="setup-confirm" class="form-control" minlength="10" required></div>
+      <button class="btn btn-teal w-100 py-2 fw-bold">إنشاء حساب المسؤول</button>
+    </form>
+    <form id="login-form">
+      <div class="mb-3"><label class="form-label">البريد الإلكتروني</label><input type="email" id="login-email" class="form-control" required></div>
+      <div class="mb-3"><label class="form-label">كلمة المرور</label><input type="password" id="login-password" class="form-control" required></div>
+      <button id="login-submit" class="btn btn-teal w-100 py-2 fw-bold">دخول</button>
+    </form>
+  </div>
+</div>
+
+<div id="app" style="display:none">
+<div class="container-fluid"><div class="row">
+  <div class="col-md-3 col-lg-2 sidebar p-3 no-print">
+    <h5 class="text-center fw-bold mb-2">🎓 حضور المعهد</h5>
+    <div class="text-center small mb-3"><span id="side-name"></span><br><span id="side-role" class="badge bg-secondary mt-1"></span></div>
+    <hr>
+    <ul class="nav nav-pills flex-column" id="nav">
+      <li><a class="nav-link active" data-tab="dashboard">📊 الرئيسية</a></li>
+      <li><a class="nav-link" data-tab="attendance">✅ تسجيل الحضور</a></li>
+      <li><a class="nav-link" data-tab="reports">📑 التقارير والإنذارات</a></li>
+      <li class="adm"><a class="nav-link" data-tab="courses">📚 الدورات</a></li>
+      <li class="adm"><a class="nav-link" data-tab="teachers">👨‍🏫 الأساتذة</a></li>
+      <li class="adm"><a class="nav-link" data-tab="students">🧑‍🎓 الطلاب</a></li>
+      <li class="adm"><a class="nav-link" data-tab="users">🔐 المستخدمون</a></li>
+      <li class="adm"><a class="nav-link" data-tab="settings">💾 النسخ الاحتياطي</a></li>
+      <li class="mt-3"><a class="nav-link text-danger" id="logout">تسجيل الخروج</a></li>
+    </ul>
+  </div>
+
+  <div class="col-md-9 col-lg-10 p-4">
+    <!-- الرئيسية -->
+    <div id="tab-dashboard" class="tab">
+      <h4 class="fw-bold mb-3">لوحة المعهد</h4>
+      <div class="row g-3 mb-3">
+        <div class="col-6 col-md-3"><div class="stat" style="background:#0f766e"><b id="s-courses">0</b>دورة جارية</div></div>
+        <div class="col-6 col-md-3"><div class="stat" style="background:#1d4ed8"><b id="s-students">0</b>طالب</div></div>
+        <div class="col-6 col-md-3"><div class="stat" style="background:#7c3aed"><b id="s-teachers">0</b>أستاذ</div></div>
+        <div class="col-6 col-md-3"><div class="stat" style="background:#b45309"><b id="s-today">0</b>سجل حضور اليوم</div></div>
+      </div>
+      <div class="row g-3">
+        <div class="col-lg-7"><div class="box"><h6 class="fw-bold mb-3">الدورات: غياب الطلاب وانتظام الأستاذ</h6><div id="course-bars"></div></div></div>
+        <div class="col-lg-5"><div class="box"><h6 class="fw-bold mb-3 text-danger">أكثر الطلاب غياباً</h6><div id="top-absent"></div></div></div>
+      </div>
+    </div>
+
+    <!-- تسجيل الحضور -->
+    <div id="tab-attendance" class="tab d-none">
+      <h4 class="fw-bold mb-3">تسجيل الحضور</h4>
+      <div class="box mb-3"><div class="row g-3 align-items-end">
+        <div class="col-md-5"><label class="form-label">الدورة</label><select id="a-course" class="form-select"></select></div>
+        <div class="col-md-3"><label class="form-label">التاريخ</label><input type="date" id="a-date" class="form-control"></div>
+        <div class="col-md-4"><div class="btn-group seg w-100">
+          <button class="btn btn-outline-secondary on" id="m-s">الطلاب</button>
+          <button class="btn btn-outline-secondary" id="m-t">الأستاذ</button></div></div>
+      </div></div>
+      <div class="box">
+        <div class="d-flex flex-wrap gap-2 mb-2" id="a-tools">
+          <button class="btn btn-sm btn-outline-success" id="all-p">✓ الكل حاضر</button>
+          <button class="btn btn-sm btn-outline-danger" id="all-a">✗ الكل غائب</button>
+          <input id="a-search" class="form-control form-control-sm" placeholder="🔍 بحث..." style="width:220px">
+          <span id="a-info" class="small text-muted align-self-center"></span>
+        </div>
+        <div class="table-responsive"><table class="table align-middle"><thead id="a-head"></thead><tbody id="a-body"></tbody></table></div>
+        <button class="btn btn-teal fw-bold px-4" id="a-save" style="display:none">حفظ الحضور</button>
+      </div>
+    </div>
+
+    <!-- التقارير -->
+    <div id="tab-reports" class="tab d-none">
+      <h4 class="fw-bold mb-3">التقارير والإنذارات</h4>
+      <div class="box mb-3 no-print"><div class="row g-3 align-items-end">
+        <div class="col-md-4"><label class="form-label">الدورة</label><select id="r-course" class="form-select"></select></div>
+        <div class="col-md-2"><label class="form-label">من</label><input type="date" id="r-from" class="form-control"></div>
+        <div class="col-md-2"><label class="form-label">إلى</label><input type="date" id="r-to" class="form-control"></div>
+        <div class="col-md-4 d-flex gap-2">
+          <button class="btn btn-teal fw-bold flex-fill" id="r-show">عرض</button>
+          <button class="btn btn-success fw-bold flex-fill" id="r-xls">Excel</button>
+          <button class="btn btn-outline-dark" id="r-print">🖨</button></div>
+      </div></div>
+      <div id="r-out"><div class="box text-muted text-center">اختر دورة ثم اضغط عرض</div></div>
+    </div>
+
+    <!-- الدورات -->
+    <div id="tab-courses" class="tab d-none"><h4 class="fw-bold mb-3">إدارة الدورات</h4>
+      <div class="box mb-3"><button class="btn btn-teal fw-bold" id="add-course">+ دورة جديدة</button></div>
+      <div class="box table-responsive"><table class="table align-middle"><thead><tr><th>الدورة</th><th>الأستاذ</th><th>الأيام / الوقت</th><th>الفترة</th><th>الطلاب</th><th>الحالة</th><th></th></tr></thead><tbody id="courses-body"></tbody></table></div></div>
+
+    <!-- الأساتذة -->
+    <div id="tab-teachers" class="tab d-none"><h4 class="fw-bold mb-3">إدارة الأساتذة</h4>
+      <div class="box mb-3"><button class="btn btn-teal fw-bold" id="add-teacher">+ أستاذ جديد</button>
+        <span class="small text-muted me-2">يمكن إنشاء حساب دخول للأستاذ ليسجّل حضور دوراته بنفسه</span></div>
+      <div class="box table-responsive"><table class="table align-middle"><thead><tr><th>الاسم</th><th>الهاتف</th><th>التخصص</th><th>الدورات</th><th>حساب الدخول</th><th></th></tr></thead><tbody id="teachers-body"></tbody></table></div></div>
+
+    <!-- الطلاب -->
+    <div id="tab-students" class="tab d-none"><h4 class="fw-bold mb-3">إدارة الطلاب</h4>
+      <div class="box mb-3 d-flex flex-wrap gap-2 align-items-center">
+        <button class="btn btn-teal fw-bold" id="add-student">+ طالب جديد</button>
+        <button class="btn btn-warning fw-bold" id="imp-csv">استيراد CSV</button>
+        <input type="file" id="csv-file" accept=".csv" hidden>
+        <select id="st-filter" class="form-select" style="max-width:220px"></select>
+        <input id="st-search" class="form-control" placeholder="🔍 بحث بالاسم أو الهاتف" style="max-width:230px">
+        <span class="small text-muted">CSV: الاسم,الهاتف,اسم الدورة (عدة دورات تُفصل بـ ؛)</span></div>
+      <div class="box table-responsive"><table class="table table-hover align-middle"><thead><tr><th>الاسم</th><th>الهاتف</th><th>الدورات المسجّل بها</th><th></th></tr></thead><tbody id="students-body"></tbody></table></div></div>
+
+    <!-- المستخدمون -->
+    <div id="tab-users" class="tab d-none"><h4 class="fw-bold mb-3">المستخدمون والصلاحيات</h4>
+      <div class="box mb-3"><button class="btn btn-teal fw-bold" id="add-user">+ مسؤول جديد</button></div>
+      <div class="box table-responsive"><table class="table align-middle"><thead><tr><th>الاسم</th><th>البريد</th><th>الصلاحية</th><th>الحالة</th><th></th></tr></thead><tbody id="users-body"></tbody></table></div></div>
+
+    <!-- الإعدادات -->
+    <div id="tab-settings" class="tab d-none"><h4 class="fw-bold mb-3">النسخ الاحتياطي</h4>
+      <div class="box mb-3"><p class="text-muted">البيانات محفوظة في هذا المتصفح فقط. خذ نسخة احتياطية بشكل دوري.</p>
+        <button class="btn btn-success fw-bold" id="backup">⬇ تصدير نسخة (JSON)</button>
+        <button class="btn btn-outline-success fw-bold" id="restore">⬆ استعادة نسخة</button>
+        <input type="file" id="restore-file" accept=".json" hidden></div>
+      <div class="box"><h6 class="text-danger fw-bold">منطقة الخطر</h6><button class="btn btn-outline-danger" id="reset">حذف كل البيانات</button></div></div>
+  </div>
+</div></div></div>
+
+<!-- نافذة نماذج عامة -->
+<div id="m"><div class="mbox">
+  <div class="modal-header"><h5 class="modal-title fw-bold" id="m-title"></h5><button class="btn-close" onclick="closeM()"></button></div>
+  <div class="modal-body" id="m-body"></div>
+  <div class="modal-footer"><button class="btn btn-teal w-100 fw-bold" id="m-save">حفظ</button></div>
+</div></div></div>
+<div id="toast" class="alert alert-success py-2 px-3 shadow">✓ تم الحفظ</div>
+
+<script>
+const DB_KEY='institute_db_v1', SK='institute_session';
+const ST=['حاضر','متأخر','مجاز','غائب'];
+let db, me, mode='s', saveCb=null;
+const $=i=>document.getElementById(i);
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const today=()=>{const d=new Date();return new Date(d-d.getTimezoneOffset()*6e4).toISOString().slice(0,10)};
+const nid=a=>a.length?Math.max(...a.map(x=>x.id))+1:1;
+function hash(str){let a=0xdeadbeef,b=0x41c6ce57;for(let i=0;i<str.length;i++){const c=str.charCodeAt(i);a=Math.imul(a^c,2654435761);b=Math.imul(b^c,1597334677)}
+  a=Math.imul(a^(a>>>16),2246822507)^Math.imul(b^(b>>>13),3266489909);b=Math.imul(b^(b>>>16),2246822507)^Math.imul(a^(a>>>13),3266489909);
+  return (b>>>0).toString(16).padStart(8,'0')+(a>>>0).toString(16).padStart(8,'0')}
+
+/* ---------- قاعدة البيانات ---------- */
+function seed(){return{users:[],
+  teachers:[],courses:[],students:[],att:{}}}
+function load(){try{db=JSON.parse(localStorage.getItem(DB_KEY))||seed()}catch(e){db=seed()}
+  ['users','teachers','courses','students'].forEach(k=>db[k]=db[k]||[]);db.att=db.att||{};
+  db.users=db.users.filter(u=>!(u.id===1&&u.full_name==='مدير النظام'&&u.role==='admin'));save()}
+const mem={};
+const ss={get:()=>{try{return sessionStorage.getItem(SK)}catch(e){return mem.s}},set:v=>{mem.s=v;try{sessionStorage.setItem(SK,v)}catch(e){}},del:()=>{mem.s=null;try{sessionStorage.removeItem(SK)}catch(e){}}};
+let warned=false;
+function save(){try{localStorage.setItem(DB_KEY,JSON.stringify(db))}catch(e){if(!warned){warned=true;setTimeout(()=>alert('تنبيه: المتصفح يمنع حفظ البيانات في هذه البيئة، وستضيع عند إغلاق الصفحة. افتح الملف مباشرة من جهازك في Chrome أو Edge.'),300)}}}
+function toast(t){const e=$('toast');e.textContent=t||'✓ تم الحفظ';e.style.opacity=1;clearTimeout(e._t);e._t=setTimeout(()=>e.style.opacity=0,1500)}
+
+/* ---------- مساعدات البيانات ---------- */
+const admin=()=>me.role==='admin';
+const myCourses=()=>admin()?db.courses:db.courses.filter(c=>c.teacher_id==me.teacher_id);
+const course=id=>db.courses.find(c=>c.id==id);
+const cName=id=>(course(id)||{}).name||'—';
+const tName=id=>(db.teachers.find(t=>t.id==id)||{}).name||'بدون أستاذ';
+const enrolled=cid=>db.students.filter(s=>s.course_ids.includes(+cid));
+const key=(t,p,c,d)=>`${t}|${p}|${c}|${d}`;
+function recs(type,cid,from,to){const o=[];for(const[k,v]of Object.entries(db.att)){const[t,p,c,d]=k.split('|');
+  if(t==type&&c==cid&&(!from||d>=from)&&(!to||d<=to))o.push({p:+p,d,s:v.status})}return o}
+function summarize(type,cid,from,to){const rs=recs(type,cid,from,to),dates=new Set(rs.map(r=>r.d)),by={};
+  rs.forEach(r=>{by[r.p]=by[r.p]||{حاضر:0,متأخر:0,مجاز:0,غائب:0};by[r.p][r.s]++});return{n:dates.size,by}}
+const pct=(a,n)=>n?a/n*100:0;
+function level(p){return p>=15?['إنذار نهائي','danger']:p>=10?['إنذار ثانٍ','warning']:p>=5?['إنذار أول','info']:['منتظم','success']}
+const barColor=p=>p>=15?'#dc2626':p>=10?'#f59e0b':p>=5?'#eab308':'#16a34a';
+const opts=(list,sel)=>list.map(([v,l])=>`<option value="${esc(v)}" ${v==sel?'selected':''}>${esc(l)}</option>`).join('');
+const courseOpts=(list,sel)=>opts(list.map(c=>[c.id,c.name]),sel)||'<option value="">لا توجد دورات</option>';
+
+/* ---------- نموذج عام ---------- */
+function form(title,fields,cb){
+  $('m-title').textContent=title;
+  $('m-body').innerHTML=fields.map(f=>{const id='f_'+f.k;let h='';
+    if(f.t==='select')h=`<select id="${id}" class="form-select">${opts(f.o,f.v)}</select>`;
+    else if(f.t==='checks')h=(f.o.length?f.o.map(([v,l])=>`<div class="form-check"><input type="checkbox" class="form-check-input ck-${f.k}" value="${v}" id="${id}${v}" ${(f.v||[]).includes(+v)?'checked':''}><label class="form-check-label" for="${id}${v}">${esc(l)}</label></div>`).join(''):'<div class="text-muted small">لا توجد دورات بعد</div>');
+    else h=`<input type="${f.t||'text'}" id="${id}" class="form-control" value="${esc(f.v)}" ${f.r?'required':''}>`;
+    return `<div class="mb-3"><label class="form-label">${f.l}</label>${h}</div>`}).join('');
+  saveCb=()=>{const v={};for(const f of fields){v[f.k]=f.t==='checks'?[...document.querySelectorAll('.ck-'+f.k+':checked')].map(x=>+x.value):$('f_'+f.k).value.trim();
+      if(f.r&&!v[f.k]){alert('يرجى تعبئة: '+f.l);return}}
+    if(cb(v)!==false){save();closeM();render();toast()}};
+  $('m').classList.add('open');
+}
+const closeM=()=>$('m').classList.remove('open');
+const tOpts=()=>[['','— بدون —'],...db.teachers.map(t=>[t.id,t.name])];
+
+/* ---------- التنقل ---------- */
+function render(){const t=document.querySelector('#nav .active').dataset.tab;
+  ({dashboard:rDash,attendance:rAttInit,reports:rRepInit,courses:rCourses,teachers:rTeachers,students:rStudents,users:rUsers,settings:()=>{}})[t]()}
+function go(t){document.querySelectorAll('.tab').forEach(e=>e.classList.add('d-none'));
+  document.querySelectorAll('#nav .nav-link').forEach(e=>e.classList.remove('active'));
+  $('tab-'+t).classList.remove('d-none');document.querySelector(`#nav [data-tab="${t}"]`).classList.add('active');render()}
+
+/* ---------- الرئيسية ---------- */
+function rDash(){
+  const cs=myCourses(),ids=new Set(cs.map(c=>c.id));
+  $('s-courses').textContent=cs.filter(c=>c.status!=='منتهية').length;
+  $('s-students').textContent=new Set(db.students.filter(s=>s.course_ids.some(i=>ids.has(i))).map(s=>s.id)).size;
+  $('s-teachers').textContent=admin()?db.teachers.length:1;
+  $('s-today').textContent=Object.keys(db.att).filter(k=>{const[,,c,d]=k.split('|');return d===today()&&ids.has(+c)}).length;
+  const top=[];
+  $('course-bars').innerHTML=cs.length?cs.map(c=>{
+    const s=summarize('s',c.id),t=summarize('t',c.id);
+    let ab=0,tot=0;Object.values(s.by).forEach(v=>{ab+=v.غائب;tot+=s.n});
+    enrolled(c.id).forEach(st=>{const v=s.by[st.id];if(v&&s.n)top.push({st,c,ab:v.غائب,p:pct(v.غائب,s.n)})});
+    const tv=t.by[c.teacher_id]||{حاضر:0,متأخر:0},tp=pct(tv.حاضر+tv.متأخر,t.n),sp=pct(ab,tot);
+    return `<div class="mb-3"><div class="d-flex justify-content-between small mb-1"><strong>${esc(c.name)}</strong><span>غياب الطلاب ${sp.toFixed(1)}%</span></div>
+      <div class="bar mb-1"><i style="width:${sp}%;background:${barColor(sp)}"></i></div>
+      <div class="small text-muted">الأستاذ ${esc(tName(c.teacher_id))}: حضور ${t.n?tp.toFixed(0)+'%':'—'} من ${t.n} جلسة</div></div>`}).join('')
+    :'<p class="text-muted">لا توجد دورات بعد. ابدأ من قسم الدورات.</p>';
+  top.sort((a,b)=>b.ab-a.ab);
+  $('top-absent').innerHTML=top.filter(x=>x.ab).slice(0,5).map(x=>`<div class="d-flex justify-content-between border-bottom py-2 small"><span>${esc(x.st.name)}<br><span class="text-muted">${esc(x.c.name)}</span></span><span class="text-danger fw-bold">${x.ab} (${x.p.toFixed(0)}%)</span></div>`).join('')||'<p class="text-muted">لا توجد سجلات غياب.</p>';
+}
+
+/* ---------- تسجيل الحضور ---------- */
+function rAttInit(){const cs=myCourses().filter(c=>c.status!=='منتهية');
+  const cur=$('a-course').value;$('a-course').innerHTML=courseOpts(cs,cur);
+  if(!$('a-date').value)$('a-date').value=today();rAtt()}
+function rAtt(){
+  const cid=+$('a-course').value,date=$('a-date').value,c=course(cid),tb=$('a-body');
+  $('m-s').classList.toggle('on',mode==='s');$('m-t').classList.toggle('on',mode==='t');
+  $('a-save').style.display='none';
+  if(!c){$('a-head').innerHTML='';tb.innerHTML='<tr><td class="text-center text-muted">لا توجد دورة مختارة</td></tr>';return}
+  const people=mode==='s'?enrolled(cid).sort((a,b)=>a.name.localeCompare(b.name,'ar')):db.teachers.filter(t=>t.id==c.teacher_id);
+  $('a-head').innerHTML=`<tr><th>#</th><th>${mode==='s'?'الطالب':'الأستاذ'}</th><th style="width:150px">الحالة</th>${mode==='t'?'<th style="width:130px">وقت الوصول</th>':''}<th>ملاحظات</th></tr>`;
+  if(!people.length){tb.innerHTML=`<tr><td colspan="5" class="text-center text-muted">${mode==='s'?'لا يوجد طلاب مسجلون في هذه الدورة':'لم يُعيَّن أستاذ لهذه الدورة'}</td></tr>`;return}
+  let saved=0;
+  tb.innerHTML=people.map((p,i)=>{const r=db.att[key(mode,p.id,cid,date)];if(r)saved++;const s=r?r.status:'حاضر';
+    return `<tr class="arow" data-pid="${p.id}" data-q="${esc(p.name)}"><td>${i+1}</td><td>${esc(p.name)}</td>
+    <td><select class="form-select form-select-sm st st-${s}" onchange="this.className='form-select form-select-sm st st-'+this.value">${ST.map(x=>`<option ${x==s?'selected':''}>${x}</option>`).join('')}</select></td>
+    ${mode==='t'?`<td><input type="time" class="form-control form-control-sm tm" value="${r&&r.time||''}"></td>`:''}
+    <td><input class="form-control form-control-sm nt" value="${esc(r&&r.notes||'')}"></td></tr>`}).join('');
+  $('a-info').textContent=saved?`✔ سُجّل مسبقاً لهذا اليوم (${saved})`:'لم يُسجَّل بعد لهذا اليوم';
+  $('a-save').style.display='';
+  $('all-p').style.display=$('all-a').style.display=$('a-search').style.display=mode==='s'?'':'none';
+}
+function saveAtt(){const cid=+$('a-course').value,date=$('a-date').value;if(!date)return alert('اختر التاريخ');
+  document.querySelectorAll('.arow').forEach(r=>{const o={status:r.querySelector('.st').value,notes:r.querySelector('.nt').value.trim()};
+    const tm=r.querySelector('.tm');if(tm)o.time=tm.value;db.att[key(mode,r.dataset.pid,cid,date)]=o});
+  save();toast('✓ تم حفظ الحضور');rAtt()}
+const setAll=v=>document.querySelectorAll('.arow .st').forEach(s=>{s.value=v;s.className='form-select form-select-sm st st-'+v});
+
+/* ---------- التقارير ---------- */
+function rRepInit(){const cur=$('r-course').value;$('r-course').innerHTML=courseOpts(myCourses(),cur)}
+function buildReport(){
+  const cid=+$('r-course').value,c=course(cid);if(!c)return null;
+  const from=$('r-from').value,to=$('r-to').value,s=summarize('s',cid,from,to),t=summarize('t',cid,from,to);
+  const rows=enrolled(cid).map(st=>{const v=s.by[st.id]||{حاضر:0,متأخر:0,مجاز:0,غائب:0},p=pct(v.غائب,s.n);return{st,v,p,lv:level(p)}}).sort((a,b)=>b.p-a.p);
+  const tv=t.by[c.teacher_id]||{حاضر:0,متأخر:0,مجاز:0,غائب:0};
+  return{c,s,t,rows,tv,tp:pct(tv.غائب,t.n)};
+}
+function showReport(){const R=buildReport();if(!R){$('r-out').innerHTML='<div class="box text-muted text-center">لا توجد دورة</div>';return}
+  const{c,s,t,rows,tv}=R;
+  $('r-out').innerHTML=`<div class="box mb-3"><h5 class="fw-bold">${esc(c.name)}</h5><div class="text-muted small">الأستاذ: ${esc(tName(c.teacher_id))} — عدد جلسات الطلاب المسجلة: ${s.n} — جلسات الأستاذ: ${t.n}</div></div>
+  <div class="box mb-3"><h6 class="fw-bold">حضور الأستاذ</h6><table class="table table-bordered mb-0"><thead class="table-light"><tr><th>الجلسات</th><th>حاضر</th><th>متأخر</th><th>مجاز</th><th>غائب</th><th>نسبة الغياب</th></tr></thead>
+  <tbody><tr><td>${t.n}</td><td>${tv.حاضر}</td><td>${tv.متأخر}</td><td>${tv.مجاز}</td><td>${tv.غائب}</td><td>${R.tp.toFixed(1)}%</td></tr></tbody></table></div>
+  <div class="box"><h6 class="fw-bold">حضور الطلاب</h6><div class="table-responsive"><table class="table table-bordered align-middle mb-0"><thead class="table-dark"><tr><th>الطالب</th><th>الجلسات</th><th>حاضر</th><th>متأخر</th><th>مجاز</th><th>غائب</th><th>نسبة الغياب</th><th>المستوى</th></tr></thead><tbody>
+  ${rows.map(r=>`<tr><td>${esc(r.st.name)}</td><td>${s.n}</td><td>${r.v.حاضر}</td><td>${r.v.متأخر}</td><td>${r.v.مجاز}</td><td class="text-danger fw-bold">${r.v.غائب}</td><td>${r.p.toFixed(1)}%</td><td><span class="badge bg-${r.lv[1]} ${r.lv[1]=='warning'?'text-dark':''}">${r.lv[0]}</span></td></tr>`).join('')||'<tr><td colspan="8" class="text-center text-muted">لا يوجد طلاب</td></tr>'}</tbody></table></div></div>`}
+function exportReport(){const R=buildReport();if(!R)return alert('اختر دورة');
+  let h=`<html dir="rtl"><head><meta charset="UTF-8"></head><body><h3>${esc(R.c.name)} - الأستاذ: ${esc(tName(R.c.teacher_id))}</h3>
+  <table border="1"><tr><th colspan="6">حضور الأستاذ</th></tr><tr><th>الجلسات</th><th>حاضر</th><th>متأخر</th><th>مجاز</th><th>غائب</th><th>نسبة الغياب</th></tr>
+  <tr><td>${R.t.n}</td><td>${R.tv.حاضر}</td><td>${R.tv.متأخر}</td><td>${R.tv.مجاز}</td><td>${R.tv.غائب}</td><td>${R.tp.toFixed(1)}%</td></tr></table><br>
+  <table border="1"><tr><th>الطالب</th><th>الهاتف</th><th>الجلسات</th><th>حاضر</th><th>متأخر</th><th>مجاز</th><th>غائب</th><th>نسبة الغياب</th><th>المستوى</th></tr>`;
+  R.rows.forEach(r=>h+=`<tr><td>${esc(r.st.name)}</td><td>${esc(r.st.phone)}</td><td>${R.s.n}</td><td>${r.v.حاضر}</td><td>${r.v.متأخر}</td><td>${r.v.مجاز}</td><td>${r.v.غائب}</td><td>${r.p.toFixed(1)}%</td><td>${r.lv[0]}</td></tr>`);
+  download(h+'</table></body></html>',`تقرير_${R.c.name}.xls`,'application/vnd.ms-excel')}
+function download(content,name,mime){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\uFEFF'+content],{type:mime+';charset=utf-8'}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),500)}
+
+/* ---------- الدورات ---------- */
+function rCourses(){$('courses-body').innerHTML=db.courses.map(c=>`<tr><td class="fw-bold">${esc(c.name)}</td><td>${esc(tName(c.teacher_id))}</td><td>${esc(c.days)}<br><small class="text-muted">${esc(c.time)}</small></td>
+  <td class="small">${esc(c.start||'—')}<br>${esc(c.end||'—')}</td><td>${enrolled(c.id).length}</td><td><span class="badge bg-${c.status==='منتهية'?'secondary':'success'}">${c.status||'جارية'}</span></td>
+  <td class="text-nowrap"><button class="btn btn-sm btn-outline-primary" onclick="editCourse(${c.id})">تعديل</button> <button class="btn btn-sm btn-outline-danger" onclick="delCourse(${c.id})">حذف</button></td></tr>`).join('')||'<tr><td colspan="7" class="text-center text-muted">لا توجد دورات. أضف أول دورة.</td></tr>'}
+function editCourse(id){const c=id?course(id):{};form(id?'تعديل الدورة':'دورة جديدة',[
+  {k:'name',l:'اسم الدورة',v:c.name,r:1},{k:'teacher_id',l:'الأستاذ',t:'select',o:tOpts(),v:c.teacher_id},
+  {k:'days',l:'أيام الدوام',v:c.days,},{k:'time',l:'الوقت (مثال: 4:00 - 6:00 م)',v:c.time},
+  {k:'start',l:'تاريخ البدء',t:'date',v:c.start},{k:'end',l:'تاريخ الانتهاء',t:'date',v:c.end},
+  {k:'status',l:'الحالة',t:'select',o:[['جارية','جارية'],['منتهية','منتهية']],v:c.status||'جارية'}],v=>{
+  const o={...v,teacher_id:v.teacher_id?+v.teacher_id:null};
+  if(id)Object.assign(c,o);else db.courses.push({id:nid(db.courses),...o})})}
+function delCourse(id){if(!confirm('حذف الدورة وكل سجلات حضورها؟'))return;
+  db.courses=db.courses.filter(c=>c.id!=id);db.students.forEach(s=>s.course_ids=s.course_ids.filter(i=>i!=id));
+  Object.keys(db.att).forEach(k=>{if(k.split('|')[2]==id)delete db.att[k]});save();render()}
+
+/* ---------- الأساتذة ---------- */
+function rTeachers(){$('teachers-body').innerHTML=db.teachers.map(t=>{const u=db.users.find(u=>u.teacher_id==t.id);
+  return `<tr><td class="fw-bold">${esc(t.name)}</td><td>${esc(t.phone)}</td><td>${esc(t.spec)}</td><td class="small">${db.courses.filter(c=>c.teacher_id==t.id).map(c=>esc(c.name)).join('، ')||'—'}</td>
+  <td class="small">${u?esc(u.email):'<span class="text-muted">لا يوجد</span>'}</td>
+  <td class="text-nowrap"><button class="btn btn-sm btn-outline-primary" onclick="editTeacher(${t.id})">تعديل</button> <button class="btn btn-sm btn-outline-danger" onclick="delTeacher(${t.id})">حذف</button></td></tr>`}).join('')||'<tr><td colspan="6" class="text-center text-muted">لا يوجد أساتذة</td></tr>'}
+function editTeacher(id){const t=id?db.teachers.find(x=>x.id==id):{},u=id&&db.users.find(u=>u.teacher_id==id);
+  form(id?'تعديل الأستاذ':'أستاذ جديد',[{k:'name',l:'الاسم الكامل',v:t.name,r:1},{k:'phone',l:'الهاتف',v:t.phone},{k:'spec',l:'التخصص',v:t.spec},
+    {k:'email',l:'البريد (لحساب الدخول - اختياري)',t:'email',v:u?u.email:''},{k:'pass',l:u?'كلمة مرور جديدة (اتركها فارغة للإبقاء)':'كلمة المرور',t:'password'}],v=>{
+    if(v.email&&db.users.some(x=>x.email===v.email&&x!==u)){alert('البريد مستخدم مسبقاً');return false}
+    if(v.email&&!u&&!v.pass){alert('أدخل كلمة مرور للحساب');return false}
+    let tid=id;if(id)Object.assign(t,{name:v.name,phone:v.phone,spec:v.spec});else{tid=nid(db.teachers);db.teachers.push({id:tid,name:v.name,phone:v.phone,spec:v.spec})}
+    if(v.email){if(u){u.email=v.email;u.full_name=v.name;if(v.pass)u.password=hash(v.pass)}
+      else db.users.push({id:nid(db.users),full_name:v.name,email:v.email,password:hash(v.pass),role:'teacher',teacher_id:tid,is_active:true})}})}
+function delTeacher(id){if(!confirm('حذف الأستاذ؟ ستبقى دوراته بدون أستاذ.'))return;
+  db.teachers=db.teachers.filter(t=>t.id!=id);db.courses.forEach(c=>{if(c.teacher_id==id)c.teacher_id=null});
+  db.users=db.users.filter(u=>u.teacher_id!=id);Object.keys(db.att).forEach(k=>{const p=k.split('|');if(p[0]==='t'&&p[1]==id)delete db.att[k]});save();render()}
+
+/* ---------- الطلاب ---------- */
+function rStudents(){const f=$('st-filter'),cur=f.value;f.innerHTML='<option value="">كل الدورات</option>'+courseOpts(db.courses,cur).replace('<option value="">لا توجد دورات</option>','');f.value=cur;
+  const q=$('st-search').value.trim().toLowerCase();
+  const list=db.students.filter(s=>(!f.value||s.course_ids.includes(+f.value))&&(!q||(s.name+' '+s.phone).toLowerCase().includes(q)));
+  $('students-body').innerHTML=list.map(s=>`<tr><td class="fw-bold">${esc(s.name)}</td><td>${esc(s.phone)}</td><td class="small">${s.course_ids.map(cName).map(esc).join('، ')||'—'}</td>
+  <td class="text-nowrap"><button class="btn btn-sm btn-outline-primary" onclick="editStudent(${s.id})">تعديل</button> <button class="btn btn-sm btn-outline-danger" onclick="delStudent(${s.id})">حذف</button></td></tr>`).join('')||'<tr><td colspan="4" class="text-center text-muted">لا يوجد طلاب</td></tr>'}
+function editStudent(id){const s=id?db.students.find(x=>x.id==id):{};
+  form(id?'تعديل الطالب':'طالب جديد',[{k:'name',l:'الاسم الكامل',v:s.name,r:1},{k:'phone',l:'الهاتف',v:s.phone},
+    {k:'course_ids',l:'الدورات المسجّل بها',t:'checks',o:db.courses.map(c=>[c.id,c.name]),v:s.course_ids||[]}],v=>{
+    if(id)Object.assign(s,v);else db.students.push({id:nid(db.students),...v})})}
+function delStudent(id){if(!confirm('حذف الطالب وسجلاته؟'))return;db.students=db.students.filter(s=>s.id!=id);
+  Object.keys(db.att).forEach(k=>{const p=k.split('|');if(p[0]==='s'&&p[1]==id)delete db.att[k]});save();render()}
+function importCSV(file){const rd=new FileReader();rd.onload=e=>{let n=0;
+  e.target.result.replace(/^\uFEFF/,'').split(/\r?\n/).forEach((ln,i)=>{const p=ln.split(',').map(x=>x.trim());if(!p[0]||(i==0&&/الاسم|name/i.test(p[0])))return;
+    const ids=(p[2]||'').split(/[;؛]/).map(x=>x.trim()).map(nm=>db.courses.find(c=>c.name===nm)).filter(Boolean).map(c=>c.id);
+    db.students.push({id:nid(db.students),name:p[0],phone:p[1]||'',course_ids:ids});n++});
+  save();render();toast(`✓ تم استيراد ${n} طالب`)};rd.readAsText(file,'utf-8')}
+
+/* ---------- المستخدمون ---------- */
+function rUsers(){$('users-body').innerHTML=db.users.map(u=>`<tr><td>${esc(u.full_name)}</td><td>${esc(u.email)}</td><td>${u.role==='admin'?'مسؤول':'أستاذ'}</td>
+  <td><span class="badge bg-${u.is_active?'success':'secondary'}">${u.is_active?'مفعّل':'معطّل'}</span></td>
+  <td class="text-nowrap">${u.id===me.id?'<span class="text-muted small">حسابك</span>':`<button class="btn btn-sm btn-outline-warning" onclick="togUser(${u.id})">${u.is_active?'تعطيل':'تفعيل'}</button> <button class="btn btn-sm btn-outline-danger" onclick="delUser(${u.id})">حذف</button>`}</td></tr>`).join('')}
+function togUser(id){const u=db.users.find(x=>x.id==id);u.is_active=!u.is_active;save();rUsers()}
+function delUser(id){if(confirm('حذف المستخدم؟')){db.users=db.users.filter(u=>u.id!=id);save();rUsers()}}
+
+/* ---------- الدخول ---------- */
+let fails=0,lock=0;
+function setupAdmin(e){e.preventDefault();const er=$('login-error');
+  if(db.users.length)return init();
+  const password=$('setup-password').value;
+  if(password.length<10){er.textContent='كلمة المرور يجب أن تكون 10 أحرف على الأقل.';er.style.display='block';return}
+  if(password!==$('setup-confirm').value){er.textContent='كلمتا المرور غير متطابقتين.';er.style.display='block';return}
+  const u={id:nid(db.users),full_name:$('setup-name').value.trim(),email:$('setup-email').value.trim(),password:hash(password),role:'admin',is_active:true};
+  db.users.push(u);save();ss.set(u.id);init()}
+function login(e){e.preventDefault();const er=$('login-error'),b=$('login-submit');
+  if(Date.now()<lock){er.textContent='الدخول مقفل مؤقتاً، حاول بعد قليل.';er.style.display='block';return}
+  const u=db.users.find(u=>u.email===$('login-email').value.trim()&&u.is_active);
+  if(u&&u.password===hash($('login-password').value)){fails=0;ss.set(u.id);init()}
+  else{fails++;er.textContent=fails>=5?'تم قفل الدخول لمدة دقيقة.':`البريد أو كلمة المرور غير صحيحة (متبقي ${5-fails})`;er.style.display='block';
+    if(fails>=5){fails=0;lock=Date.now()+6e4;b.disabled=true;setTimeout(()=>b.disabled=false,6e4)}}}
+function init(){me=db.users.find(u=>u.id==ss.get()&&u.is_active);
+  const firstRun=!db.users.length;
+  $('login-screen').style.display=me?'none':'flex';$('app').style.display=me?'block':'none';
+  $('setup-form').style.display=!me&&firstRun?'':'none';$('login-form').style.display=!me&&firstRun?'none':'';
+  $('login-title').textContent=firstRun?'إعداد المسؤول الأول':'تسجيل الدخول';
+  $('login-note').textContent=firstRun?'البيانات محفوظة في هذا المتصفح فقط؛ لا تستخدم معلومات حساسة.':'نظام حضور المعهد';
+  if(!me)return;
+  $('side-name').textContent=me.full_name;$('side-role').textContent=admin()?'مسؤول':'أستاذ';
+  document.querySelectorAll('.adm').forEach(e=>e.style.display=admin()?'':'none');go('dashboard')}
+
+/* ---------- ربط الأحداث ---------- */
+document.addEventListener('DOMContentLoaded',()=>{$('login-form').onsubmit=login;$('setup-form').onsubmit=setupAdmin;load();init();
+  $('logout').onclick=()=>{ss.del();location.reload()};
+  document.querySelectorAll('#nav [data-tab]').forEach(a=>a.onclick=()=>go(a.dataset.tab));
+  $('m-save').onclick=()=>saveCb&&saveCb();
+  $('a-course').onchange=$('a-date').onchange=rAtt;
+  $('m-s').onclick=()=>{mode='s';rAtt()};$('m-t').onclick=()=>{mode='t';rAtt()};
+  $('all-p').onclick=()=>setAll('حاضر');$('all-a').onclick=()=>setAll('غائب');
+  $('a-search').oninput=e=>{const q=e.target.value.toLowerCase();document.querySelectorAll('.arow').forEach(r=>r.style.display=r.dataset.q.toLowerCase().includes(q)?'':'none')};
+  $('a-save').onclick=saveAtt;
+  $('r-show').onclick=showReport;$('r-xls').onclick=exportReport;$('r-print').onclick=()=>{showReport();window.print()};
+  $('add-course').onclick=()=>editCourse(0);$('add-teacher').onclick=()=>editTeacher(0);$('add-student').onclick=()=>editStudent(0);
+  $('st-filter').onchange=$('st-search').oninput=rStudents;
+  $('imp-csv').onclick=()=>$('csv-file').click();$('csv-file').onchange=e=>{if(e.target.files[0])importCSV(e.target.files[0]);e.target.value=''};
+  $('add-user').onclick=()=>form('مسؤول جديد',[{k:'name',l:'الاسم',r:1},{k:'email',l:'البريد',t:'email',r:1},{k:'pass',l:'كلمة المرور',t:'password',r:1}],v=>{
+    if(db.users.some(u=>u.email===v.email)){alert('البريد مسجل مسبقاً');return false}
+    db.users.push({id:nid(db.users),full_name:v.name,email:v.email,password:hash(v.pass),role:'admin',is_active:true})});
+  $('backup').onclick=()=>download(JSON.stringify(db),`نسخة_المعهد_${today()}.json`,'application/json');
+  $('restore').onclick=()=>$('restore-file').click();
+  $('restore-file').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=x=>{try{const d=JSON.parse(x.target.result.replace(/^\uFEFF/,''));
+    if(!d.users||!d.courses)throw 0;if(confirm('استبدال كل البيانات الحالية؟')){db=d;save();location.reload()}}catch(_){alert('ملف غير صالح')}};r.readAsText(f);e.target.value=''};
+  $('reset').onclick=()=>{if(confirm('سيتم حذف كل البيانات نهائياً. متأكد؟')){try{localStorage.removeItem(DB_KEY)}catch(e){};location.reload()}};
+});
+</script>
+</body>
+</html>
