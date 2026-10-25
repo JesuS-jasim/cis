@@ -157,8 +157,9 @@ body{font-family:'Cairo','Segoe UI',Tahoma,sans-serif;background:var(--bg);color
 
     <!-- المستخدمون -->
     <div id="tab-users" class="tab d-none"><h4 class="fw-bold mb-3">المستخدمون والصلاحيات</h4>
-      <div class="box mb-3"><button class="btn btn-teal fw-bold" id="add-user">+ مسؤول جديد</button></div>
-      <div class="box table-responsive"><table class="table align-middle"><thead><tr><th>الاسم</th><th>البريد</th><th>الصلاحية</th><th>الحالة</th><th></th></tr></thead><tbody id="users-body"></tbody></table></div></div>
+      <div class="box mb-3"><p class="small text-muted mb-2">المسؤول يدير النظام بالكامل. حساب الأستاذ مرتبط بسجل أستاذ ويستطيع تسجيل حضور دوراته فقط.</p>
+        <button class="btn btn-teal fw-bold" id="add-user">+ إنشاء حساب</button></div>
+      <div class="box table-responsive"><table class="table align-middle"><thead><tr><th>الاسم</th><th>البريد</th><th>الصلاحية</th><th>الأستاذ المرتبط</th><th>الحالة</th><th></th></tr></thead><tbody id="users-body"></tbody></table></div></div>
 
     <!-- الإعدادات -->
     <div id="tab-settings" class="tab d-none"><h4 class="fw-bold mb-3">النسخ الاحتياطي</h4>
@@ -433,7 +434,7 @@ function importCSV(file){const rd=new FileReader();rd.onload=async e=>{let n=0;
   if(await save()){render();toast(`✓ تم استيراد ${n} طالب`)}};rd.readAsText(file,'utf-8')}
 
 /* ---------- المستخدمون ---------- */
-function rUsers(){$('users-body').innerHTML=db.users.map(u=>`<tr><td>${esc(u.full_name)}</td><td>${esc(u.email)}</td><td>${u.role==='admin'?'مسؤول':'أستاذ'}</td>
+function rUsers(){$('users-body').innerHTML=db.users.map(u=>`<tr><td>${esc(u.full_name)}</td><td>${esc(u.email)}</td><td>${u.role==='admin'?'مسؤول':'أستاذ'}</td><td>${u.role==='teacher'?esc(tName(u.teacher_id)):'—'}</td>
   <td><span class="badge bg-${u.is_active?'success':'secondary'}">${u.is_active?'مفعّل':'معطّل'}</span></td>
   <td class="text-nowrap">${u.id===me.id?'<span class="text-muted small">حسابك</span>':`<button class="btn btn-sm btn-outline-warning" onclick="togUser(${u.id})">${u.is_active?'تعطيل':'تفعيل'}</button> <button class="btn btn-sm btn-outline-danger" onclick="delUser(${u.id})">حذف</button>`}</td></tr>`).join('')}
 async function togUser(id){try{const u=db.users.find(x=>x.id==id);const result=await manageCloudUser({action:'toggle',id,is_active:!u.is_active});Object.assign(u,result.user);rUsers()}
@@ -488,9 +489,21 @@ document.addEventListener('DOMContentLoaded',async()=>{$('login-form').onsubmit=
   $('add-course').onclick=()=>editCourse(0);$('add-teacher').onclick=()=>editTeacher(0);$('add-student').onclick=()=>editStudent(0);
   $('st-filter').onchange=$('st-search').oninput=rStudents;
   $('imp-csv').onclick=()=>$('csv-file').click();$('csv-file').onchange=e=>{if(e.target.files[0])importCSV(e.target.files[0]);e.target.value=''};
-  $('add-user').onclick=()=>form('مسؤول جديد',[{k:'name',l:'الاسم',r:1},{k:'email',l:'البريد',t:'email',r:1},{k:'pass',l:'كلمة المرور (10 أحرف على الأقل)',t:'password',r:1}],async v=>{
-    if(db.users.some(u=>u.email===v.email)){alert('البريد مسجل مسبقاً');return false}
-    const result=await manageCloudUser({action:'create',full_name:v.name,email:v.email,password:v.pass,role:'admin'});db.users.push(result.user)});
+  $('add-user').onclick=()=>{form('إنشاء حساب',[{k:'name',l:'الاسم الكامل',r:1},{k:'email',l:'البريد الإلكتروني',t:'email',r:1},
+    {k:'pass',l:'كلمة المرور (10 أحرف على الأقل)',t:'password',r:1},
+    {k:'role',l:'نوع الحساب',t:'select',o:[['admin','مسؤول - إدارة كاملة'],['teacher','أستاذ - تسجيل حضور دوراته']],v:'admin'},
+    {k:'teacher_id',l:'ربط الحساب بسجل الأستاذ',t:'select',o:tOpts(),v:''}],async v=>{
+    const email=v.email.toLowerCase(),teacherId=v.teacher_id?Number(v.teacher_id):null;
+    if(db.users.some(u=>u.email.toLowerCase()===email)){alert('البريد مسجل مسبقاً');return false}
+    if(v.role==='teacher'){
+      if(!teacherId){alert('اختر سجل الأستاذ المرتبط بهذا الحساب');return false}
+      if(db.users.some(u=>u.role==='teacher'&&u.teacher_id===teacherId)){alert('هذا الأستاذ لديه حساب بالفعل');return false}
+    }
+    const result=await manageCloudUser({action:'create',full_name:v.name,email,password:v.pass,role:v.role,teacher_id:v.role==='teacher'?teacherId:null});
+    db.users.push(result.user)});
+    const accountRole=$('f_role'),accountTeacher=$('f_teacher_id');
+    const updateTeacherLink=()=>{accountTeacher.closest('.mb-3').style.display=accountRole.value==='teacher'?'':'none';if(accountRole.value!=='teacher')accountTeacher.value=''};
+    accountRole.onchange=updateTeacherLink;updateTeacherLink()};
   $('backup').onclick=()=>download(JSON.stringify(db),`نسخة_المعهد_${today()}.json`,'application/json');
   $('restore').onclick=()=>$('restore-file').click();
   $('restore-file').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=async x=>{try{const d=JSON.parse(x.target.result.replace(/^\uFEFF/,''));

@@ -23,6 +23,8 @@ Disable public sign-ups in Authentication settings. New accounts are created by 
 
 Invitation and password-recovery links open the website's password setup screen. The link must be opened before it expires. If it expires, send a new invitation or recovery email. The administrator profile must exist before the invite is accepted, or the user will not be able to enter the institute app.
 
+The administrator can create two account roles from **Users & permissions** in the app: administrators have full access, while teacher accounts must be linked to an existing teacher record and can only access their assigned courses and attendance.
+
 ## 3. Deploy the Edge Functions
 
 Install the Supabase CLI, sign in with `supabase login`, and link this directory to the project:
