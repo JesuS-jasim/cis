@@ -4,9 +4,11 @@
 
 Open the Supabase SQL Editor and run `supabase/schema.sql`.
 
-## 2. Create the first administrator
+## 2. Configure email links and create the first administrator
 
-In Authentication > Users, create the first user with the administrator's email and a strong password. Then run this SQL, replacing the name and email:
+In Authentication > URL Configuration, set **Site URL** to the deployed website URL and add that URL to **Redirect URLs**. Do not use `localhost` for a deployed site; it only works on the same computer when a local web server is running.
+
+In Authentication > Users, invite the first administrator. Before the recipient opens the email link, run this SQL, replacing the name and email:
 
 ```sql
 insert into public.app_profiles (auth_user_id, email, full_name, role)
@@ -18,6 +20,8 @@ set email = excluded.email, full_name = excluded.full_name, role = 'admin', is_a
 ```
 
 Disable public sign-ups in Authentication settings. New accounts are created by the authenticated administrator through the `manage-users` Edge Function.
+
+Invitation and password-recovery links open the website's password setup screen. The link must be opened before it expires. If it expires, send a new invitation or recovery email. The administrator profile must exist before the invite is accepted, or the user will not be able to enter the institute app.
 
 ## 3. Deploy the Edge Functions
 

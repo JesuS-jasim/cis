@@ -48,6 +48,19 @@ body{font-family:'Cairo','Segoe UI',Tahoma,sans-serif;background:var(--bg);color
   </div>
 </div>
 
+<div id="password-setup-screen" class="login-wrap" style="display:none">
+  <div class="card card-login p-4">
+    <h4 id="password-setup-title" class="text-center fw-bold mb-1" style="color:var(--teal)">تعيين كلمة المرور</h4>
+    <p class="text-center text-muted small mb-4">أدخل كلمة مرور جديدة لحسابك</p>
+    <div id="password-setup-error" class="alert alert-danger p-2 small text-center" style="display:none"></div>
+    <form id="password-setup-form">
+      <div class="mb-3"><label class="form-label">كلمة المرور الجديدة</label><input type="password" id="setup-password" class="form-control" minlength="10" autocomplete="new-password" required></div>
+      <div class="mb-3"><label class="form-label">تأكيد كلمة المرور</label><input type="password" id="setup-password-confirm" class="form-control" minlength="10" autocomplete="new-password" required></div>
+      <button id="password-setup-submit" class="btn btn-teal w-100 py-2 fw-bold">حفظ كلمة المرور</button>
+    </form>
+  </div>
+</div>
+
 <div id="app" style="display:none">
 <div class="container-fluid"><div class="row">
   <div class="col-md-3 col-lg-2 sidebar p-3 no-print">
@@ -172,6 +185,7 @@ const DB_KEY='institute_db_v1', SK='institute_session';
 const ST=['حاضر','متأخر','مجاز','غائب'];
 let db, me, mode='s', saveCb=null;
 let supabaseClient=null, saveQueue=Promise.resolve();
+let passwordSetupType=null;
 const $=i=>document.getElementById(i);
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const today=()=>{const d=new Date();return new Date(d-d.getTimezoneOffset()*6e4).toISOString().slice(0,10)};
@@ -183,6 +197,14 @@ function seed(){return{users:[],
 const mem={};
 const ss={get:()=>{try{return sessionStorage.getItem(SK)}catch(e){return mem.s}},set:v=>{mem.s=v;try{sessionStorage.setItem(SK,v)}catch(e){}},del:()=>{mem.s=null;try{sessionStorage.removeItem(SK)}catch(e){}}};
 function showCloudError(message){const error=$('login-error');error.textContent=message;error.style.display='block'}
+function showPasswordSetupError(message){const error=$('password-setup-error');error.textContent=message;error.style.display='block'}
+function authLinkParam(name){
+  const params=new URLSearchParams(`${location.search.slice(1)}&${location.hash.slice(1)}`);
+  return params.get(name)
+}
+function expiredLinkMessage(){
+  return 'رابط الدعوة أو التأكيد غير صالح أو انتهت صلاحيته. اطلب من المسؤول إرسال رابط جديد، ثم افتحه مباشرة بعد استلامه.'
+}
 async function callCloudFunction(name,body){
   const{data,error}=await supabaseClient.functions.invoke(name,{body});
   if(error){let message=error.message;try{const result=await error.context.json();if(result.error)message=result.error}catch(e){}throw new Error(message)}
@@ -209,8 +231,22 @@ async function connectCloud(){
     db=seed();ss.del();init();showCloudError('إعداد Supabase غير مكتمل. أضف رابط المشروع والمفتاح العام في supabase-config.js.');return
   }
   supabaseClient=window.supabase.createClient(config.url,config.anonKey);
+  const linkError=authLinkParam('error_code')||authLinkParam('error');
+  const linkType=authLinkParam('type');
+  const isPasswordLink=linkType==='invite'||linkType==='recovery'||Boolean(linkError);
+  const hasAuthCode=Boolean(authLinkParam('access_token')||authLinkParam('code'));
+  if(isPasswordLink){
+    passwordSetupType=!linkError&&hasAuthCode&&(linkType==='invite'||linkType==='recovery')?linkType:null;
+    $('login-screen').style.display='none';$('app').style.display='none';$('password-setup-screen').style.display='flex';
+    $('password-setup-title').textContent=linkType==='invite'?'تفعيل الحساب وتعيين كلمة المرور':'تعيين كلمة المرور';
+    if(linkError||!passwordSetupType)showPasswordSetupError(expiredLinkMessage());
+  }
   const{data,error}=await supabaseClient.auth.getSession();
   if(error)throw error;
+  if(isPasswordLink){
+    if(!passwordSetupType||!data.session)showPasswordSetupError(expiredLinkMessage());
+    return
+  }
   if(data.session)await loadCloudState(data.session.user.id);
   else{db=seed();ss.del();init()}
 }
@@ -411,14 +447,34 @@ async function login(e){e.preventDefault();
   const{data,error}=await supabaseClient.auth.signInWithPassword({email:$('login-email').value.trim(),password:$('login-password').value});
   if(error){showCloudError('تعذر تسجيل الدخول. تحقق من البريد وكلمة المرور.');return}
   try{await loadCloudState(data.user.id)}catch(err){await supabaseClient.auth.signOut();showCloudError(err.message||'تعذر تحميل بيانات المعهد')}}
+async function setPassword(e){
+  e.preventDefault();
+  const password=$('setup-password').value, confirmation=$('setup-password-confirm').value;
+  if(password.length<10){showPasswordSetupError('يجب أن تتكون كلمة المرور من 10 أحرف على الأقل.');return}
+  if(password!==confirmation){showPasswordSetupError('كلمتا المرور غير متطابقتين.');return}
+  if(!supabaseClient||!passwordSetupType){showPasswordSetupError(expiredLinkMessage());return}
+  const submit=$('password-setup-submit');submit.disabled=true;
+  const{data,error}=await supabaseClient.auth.updateUser({password});
+  if(error){submit.disabled=false;showPasswordSetupError(error.message||'تعذر تحديث كلمة المرور. أعد طلب رابط جديد.');return}
+  history.replaceState(null,'',location.pathname);
+  passwordSetupType=null;
+  $('password-setup-screen').style.display='none';
+  try{await loadCloudState(data.user.id)}
+  catch(loadError){
+    await supabaseClient.auth.signOut();
+    $('login-screen').style.display='flex';
+    showCloudError(loadError.message||'تم تعيين كلمة المرور لكن تعذر تحميل حساب المعهد.')
+  }
+}
 function init(){me=db.users.find(u=>u.id==ss.get()&&u.is_active);
-  $('login-screen').style.display=me?'none':'flex';$('app').style.display=me?'block':'none';
+  $('login-screen').style.display=me?'none':'flex';$('password-setup-screen').style.display='none';$('app').style.display=me?'block':'none';
   if(!me)return;
   $('side-name').textContent=me.full_name;$('side-role').textContent=admin()?'مسؤول':'أستاذ';
   document.querySelectorAll('.adm').forEach(e=>e.style.display=admin()?'':'none');go('dashboard')}
 
 /* ---------- ربط الأحداث ---------- */
 document.addEventListener('DOMContentLoaded',async()=>{$('login-form').onsubmit=login;
+  $('password-setup-form').onsubmit=setPassword;
   try{await connectCloud()}catch(error){db=seed();ss.del();init();showCloudError(error.message||'تعذر الاتصال بقاعدة البيانات')}
   $('logout').onclick=async()=>{ss.del();if(supabaseClient)await supabaseClient.auth.signOut();location.reload()};
   document.querySelectorAll('#nav [data-tab]').forEach(a=>a.onclick=()=>go(a.dataset.tab));
