@@ -101,7 +101,7 @@ Deno.serve(async (request) => {
     }
 
     if (body.action !== "save") throw new ApiError("Unknown action.");
-    const next = parseState(body.data);
+    let next = parseState(body.data);
     const current = parseState(row.data);
 
     if (profile.role === "teacher") {
